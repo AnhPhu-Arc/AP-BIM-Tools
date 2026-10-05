@@ -10,3 +10,15 @@ $txt = $txt.Replace('var grid = new Grid {', 'var grid = new System.Windows.Cont
 $txt = $txt.Replace('var input = new TextBox {', 'var input = new System.Windows.Controls.TextBox {')
 $txt = $txt.Replace('Grid.SetRow(text, 0); Grid.SetRow(input, 1); Grid.SetRow(buttons, 2);', 'System.Windows.Controls.Grid.SetRow(text, 0); System.Windows.Controls.Grid.SetRow(input, 1); System.Windows.Controls.Grid.SetRow(buttons, 2);')
 Set-Content $prompt $txt -Encoding UTF8
+
+$studio = '.\source\AP.BimTools.Structure\RebarStudio\RebarStudioWindow.cs'
+$txt = Get-Content $studio -Raw
+$txt = $txt.Replace('private void AddSection(Panel panel, string title)', 'private void AddSection(System.Windows.Controls.Panel panel, string title)')
+$txt = $txt.Replace('private void AddText(Panel panel, string key, string label, string value)', 'private void AddText(System.Windows.Controls.Panel panel, string key, string label, string value)')
+$txt = $txt.Replace('private void AddDouble(Panel panel, string key, string label, double value, string suffix)', 'private void AddDouble(System.Windows.Controls.Panel panel, string key, string label, double value, string suffix)')
+$txt = $txt.Replace('private void AddInt(Panel panel, string key, string label, int value)', 'private void AddInt(System.Windows.Controls.Panel panel, string key, string label, int value)')
+$txt = $txt.Replace('private void AddCheck(Panel panel, string key, string label, bool value)', 'private void AddCheck(System.Windows.Controls.Panel panel, string key, string label, bool value)')
+$txt = $txt.Replace('private static Grid Row(string label, out StackPanel valuePanel)', 'private static System.Windows.Controls.Grid Row(string label, out StackPanel valuePanel)')
+$txt = $txt.Replace('var grid = new Grid { Margin = new Thickness(0, 4, 0, 4) };', 'var grid = new System.Windows.Controls.Grid { Margin = new Thickness(0, 4, 0, 4) };')
+$txt = $txt.Replace('Grid.SetColumn(valuePanel, 1);', 'System.Windows.Controls.Grid.SetColumn(valuePanel, 1);')
+Set-Content $studio $txt -Encoding UTF8
