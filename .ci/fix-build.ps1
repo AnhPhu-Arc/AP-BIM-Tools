@@ -22,3 +22,20 @@ $txt = $txt.Replace('private static Grid Row(string label, out StackPanel valueP
 $txt = $txt.Replace('var grid = new Grid { Margin = new Thickness(0, 4, 0, 4) };', 'var grid = new System.Windows.Controls.Grid { Margin = new Thickness(0, 4, 0, 4) };')
 $txt = $txt.Replace('Grid.SetColumn(valuePanel, 1);', 'System.Windows.Controls.Grid.SetColumn(valuePanel, 1);')
 Set-Content $studio $txt -Encoding UTF8
+
+# Fix System.IO references used by Nice3point projects targeting older Revit/.NET.
+$settings = '.\source\AP.BimTools.Structure\RebarStudio\RebarStudioSettingsStore.cs'
+$txt = Get-Content $settings -Raw
+if ($txt -notmatch 'using System.IO;') { $txt = "using System.IO;`r`n" + $txt }
+Set-Content $settings $txt -Encoding UTF8
+$hostFile = '.\source\AP.BimTools\Host.cs'
+$txt = Get-Content $hostFile -Raw
+if ($txt -notmatch 'using System.IO;') { $txt = "using System.IO;`r`n" + $txt }
+Set-Content $hostFile $txt -Encoding UTF8
+
+# Revit 2023 exposes these as accessor methods rather than usable C# indexers.
+$docs = '.\source\AP.BimTools.Structure\RebarStudio\RebarDocumentationService.cs'
+$txt = Get-Content $docs -Raw
+$txt = $txt.Replace('sectionBox.MinEnabled[dim] = true;', 'sectionBox.set_MinEnabled(dim, true);')
+$txt = $txt.Replace('sectionBox.MaxEnabled[dim] = true;', 'sectionBox.set_MaxEnabled(dim, true);')
+Set-Content $docs $txt -Encoding UTF8
