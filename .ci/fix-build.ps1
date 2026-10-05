@@ -39,3 +39,9 @@ $txt = Get-Content $docs -Raw
 $txt = $txt.Replace('sectionBox.MinEnabled[dim] = true;', 'sectionBox.set_MinEnabled(dim, true);')
 $txt = $txt.Replace('sectionBox.MaxEnabled[dim] = true;', 'sectionBox.set_MaxEnabled(dim, true);')
 Set-Content $docs $txt -Encoding UTF8
+
+# .NET Framework target used by Revit 2023 lacks the non-generic Enum.TryParse(Type,...) overload.
+$settings = '.\source\AP.BimTools.Structure\RebarStudio\RebarStudioSettingsStore.cs'
+$txt = Get-Content $settings -Raw
+$txt = $txt.Replace('else if (property.PropertyType.IsEnum && Enum.TryParse(property.PropertyType, raw, true, out var e)) value = e;', 'else if (property.PropertyType.IsEnum) value = Enum.Parse(property.PropertyType, raw, true);')
+Set-Content $settings $txt -Encoding UTF8
