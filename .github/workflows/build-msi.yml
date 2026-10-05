@@ -1,0 +1,80 @@
+name: Build AP-BIM Tools MSI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'AP-BIM-Tools-v2.0-MSI-BuildReady.zip'
+      - '.github/workflows/build-msi.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.110'
+
+      - name: Extract AP-BIM Tools source bundle
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!(Test-Path '.\AP-BIM-Tools-v2.0-MSI-BuildReady.zip')) { throw 'AP-BIM-Tools-v2.0-MSI-BuildReady.zip was not found in repository root.' }
+          Remove-Item '.\_ap_source' -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive '.\AP-BIM-Tools-v2.0-MSI-BuildReady.zip' '.\_ap_source' -Force
+          Copy-Item '.\_ap_source\AP-BIM-Tools\*' '.\' -Recurse -Force
+          dotnet --info
+
+      - name: Build Revit 2023
+        shell: powershell
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R23
+
+      - name: Build Revit 2024
+        shell: powershell
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R24
+
+      - name: Build Revit 2025
+        shell: powershell
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R25
+
+      - name: Build Revit 2026
+        shell: powershell
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R26
+
+      - name: Build Revit 2027
+        shell: powershell
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R27
+
+      - name: Build MSI
+        shell: powershell
+        run: dotnet run --project .\install\Installer.csproj -- 2.0.0 '.\source\AP.BimTools\bin\publish\2023' '.\source\AP.BimTools\bin\publish\2024' '.\source\AP.BimTools\bin\publish\2025' '.\source\AP.BimTools\bin\publish\2026' '.\source\AP.BimTools\bin\publish\2027'
+
+      - name: Verify MSI
+        shell: powershell
+        run: |
+          Get-ChildItem '.\install\output\*.msi' | Format-Table Name, Length, LastWriteTime
+          if (!(Test-Path '.\install\output\AP-BIM-Tools-2.0.0.msi')) { throw 'Expected MSI was not created.' }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: AP-BIM-Tools-2.0.0-MSI
+          path: install/output/AP-BIM-Tools-2.0.0.msi
+          if-no-files-found: error
+
+      - name: Upload Revit publish folders
+        uses: actions/upload-artifact@v4
+        with:
+          name: AP-BIM-Tools-2.0.0-Publish
+          path: source/AP.BimTools/bin/publish/**
+          if-no-files-found: warn
