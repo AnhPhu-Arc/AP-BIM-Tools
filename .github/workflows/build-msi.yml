@@ -60,7 +60,14 @@ jobs:
 
       - name: Build MSI
         shell: powershell
-        run: dotnet run --project .\install\Installer.csproj -- 2.0.0 '.\source\AP.BimTools\bin\publish\2023' '.\source\AP.BimTools\bin\publish\2024' '.\source\AP.BimTools\bin\publish\2025' '.\source\AP.BimTools\bin\publish\2026' '.\source\AP.BimTools\bin\publish\2027'
+        run: |
+          dotnet tool install wix --version '7.*' --tool-path .\.wix
+          $wix = (Resolve-Path '.\.wix\wix.exe').Path
+          & $wix eula accept wix7
+          $wixVersion = (Get-Item $wix).VersionInfo.FileVersion
+          & $wix extension add -g "WixToolset.UI.wixext/$wixVersion"
+          $env:PATH = "$(Resolve-Path '.\.wix');$env:PATH"
+          dotnet run --project .\install\Installer.csproj -- 2.0.0 '.\source\AP.BimTools\bin\publish\2023' '.\source\AP.BimTools\bin\publish\2024' '.\source\AP.BimTools\bin\publish\2025' '.\source\AP.BimTools\bin\publish\2026' '.\source\AP.BimTools\bin\publish\2027'
 
       - name: Verify MSI
         shell: powershell
