@@ -61,6 +61,7 @@ jobs:
           $payloadBytes = [Convert]::FromBase64String(($payloadB64 -replace '\\s',''))
           [IO.File]::WriteAllBytes('.\.ci\v23-files.tar.gz', $payloadBytes)
           tar -xzf '.\.ci\v23-files.tar.gz' -C '.'
+          & '.\.ci\v23-fix.ps1'
 
           dotnet --info
 
