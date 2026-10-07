@@ -50,6 +50,8 @@ jobs:
           Expand-GzipBase64 '.\.ci\v21-icons.ps1.gz.b64' '.\.ci\v21-icons.ps1'
           & '.\.ci\v21-icons.ps1'
           & '.\.ci\fix-v211-icons.ps1'
+          & '.\.ci\v22-component-menu.ps1'
+          & '.\.ci\v22-icons.ps1'
           dotnet --info
 
       - name: Build Revit 2023
@@ -81,24 +83,24 @@ jobs:
           $wixVersion = (Get-Item $wix).VersionInfo.FileVersion
           & $wix extension add -g "WixToolset.UI.wixext/$wixVersion"
           $env:PATH = "$(Resolve-Path '.\.wix');$env:PATH"
-          dotnet run --project .\install\Installer.csproj -- 2.1.1 '.\source\AP.BimTools\bin\publish\2023' '.\source\AP.BimTools\bin\publish\2024' '.\source\AP.BimTools\bin\publish\2025' '.\source\AP.BimTools\bin\publish\2026' '.\source\AP.BimTools\bin\publish\2027'
+          dotnet run --project .\install\Installer.csproj -- 2.2.0 '.\source\AP.BimTools\bin\publish\2023' '.\source\AP.BimTools\bin\publish\2024' '.\source\AP.BimTools\bin\publish\2025' '.\source\AP.BimTools\bin\publish\2026' '.\source\AP.BimTools\bin\publish\2027'
 
       - name: Verify MSI
         shell: powershell
         run: |
           Get-ChildItem '.\output\*.msi' | Format-Table Name, Length, LastWriteTime
-          if (!(Test-Path '.\output\AP-BIM-Tools-2.1.1.msi')) { throw 'Expected MSI was not created.' }
+          if (!(Test-Path '.\output\AP-BIM-Tools-2.2.0.msi')) { throw 'Expected MSI was not created.' }
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: AP-BIM-Tools-2.1.1-MSI
-          path: output/AP-BIM-Tools-2.1.1.msi
+          name: AP-BIM-Tools-2.2.0-MSI
+          path: output/AP-BIM-Tools-2.2.0.msi
           if-no-files-found: error
 
       - name: Upload Revit publish folders
         uses: actions/upload-artifact@v4
         with:
-          name: AP-BIM-Tools-2.1.1-Publish
+          name: AP-BIM-Tools-2.2.0-Publish
           path: source/AP.BimTools/bin/publish/**
           if-no-files-found: warn
