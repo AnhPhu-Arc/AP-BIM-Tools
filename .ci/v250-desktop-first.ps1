@@ -182,4 +182,12 @@ $tail=@'
 }
 '@
 Write-Source 'Cad\ModelMerge.cs' ($head+[Environment]::NewLine+$clone+[Environment]::NewLine+$tail)
+
+# Resolve relative references in the staged drawing's own directory rather
+# than a side database whose Filename still points at the raw Revit folder.
+$l=Read-Source 'Cad\LinkPack.cs'
+$l=One $l 'string step="READ SOURCE";try{say("PACK READ "+source);using(var db=Open(source))' 'string step="COPY STAGING INPUT";string input=Path.Combine(Path.GetDirectoryName(final),"I"+Guid.NewGuid().ToString("N").Substring(0,8)+".dwg");try{File.Copy(source,input,false);File.SetAttributes(input,FileAttributes.Normal);step="READ STAGING INPUT";say("PACK READ "+input+" (source "+source+")");using(var db=Open(input))'
+$l=One $l 'throw new System.Exception(step+" | "+source+" -> "+final+" | "+ex.Message,ex);}finally{if(File.Exists(temp))File.Delete(temp);}' 'throw new System.Exception(step+" | "+source+" -> "+final+" | "+ex.Message,ex);}finally{if(File.Exists(temp))File.Delete(temp);if(File.Exists(input))File.Delete(input);}'
+Write-Source 'Cad\LinkPack.cs' $l
+
 Write-Host 'Desktop-first architecture: native flatten orchestrated by Revit, separate full CAD merge worker, no Core Console launch.'
