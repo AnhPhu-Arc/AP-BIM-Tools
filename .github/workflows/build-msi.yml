@@ -1,4 +1,4 @@
-name: Build AP-BIM Tools 2.4.4 unified MSI candidate
+name: Build AP-BIM Tools 2.5.0 unified MSI candidate
 on:
   workflow_dispatch:
   pull_request:
@@ -85,14 +85,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & '.\.ci\v244-build-integrated.ps1'
+          & '.\.ci\v250-build-integrated.ps1'
 
       - name: Upload verified MSI candidate and checksum
         uses: actions/upload-artifact@v4
         with:
-          name: AP-BIM-Tools-2.4.4-MSI-candidate-CAD2021
+          name: AP-BIM-Tools-2.5.0-MSI-candidate-CAD2021
           path: |
-            output/AP-BIM-Tools-2.4.4.msi
+            output/AP-BIM-Tools-2.5.0.msi
             output/SHA256.txt
           if-no-files-found: error
           retention-days: 90
