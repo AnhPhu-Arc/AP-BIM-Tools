@@ -1,4 +1,4 @@
-name: AP-BIM 2.4.1 Windows CI qualification
+name: Build AP-BIM Tools 2.4.1 unified MSI candidate
 on:
   workflow_dispatch:
   pull_request:
@@ -6,9 +6,9 @@ on:
 permissions:
   contents: read
 jobs:
-  ap-ribbon:
+  build:
     runs-on: windows-2025
-    timeout-minutes: 35
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -53,6 +53,11 @@ jobs:
           & '.\.ci\v23-fix.ps1'
           & '.\.ci\v24-ribbon-fix.ps1' -Phase Finalize
 
+          $mainProject = '.\source\AP.BimTools\AP.BimTools.csproj'
+          [xml]$proj = Get-Content -LiteralPath $mainProject -Raw -Encoding UTF8
+          $pg = $proj.CreateElement('PropertyGroup')
+          foreach($kv in @(@('PublishAddin','true'),@('DeployAddin','false'),@('LaunchRevit','false'))) { $node=$proj.CreateElement($kv[0]); $node.InnerText=$kv[1]; [void]$pg.AppendChild($node) }
+          [void]$proj.DocumentElement.AppendChild($pg); $proj.Save((Resolve-Path -LiteralPath $mainProject).Path)
           dotnet --info
 
       - name: Build Revit 2023
@@ -76,42 +81,18 @@ jobs:
         run: dotnet build .\AP-BIM-Tools.slnx -c Release.R27 -p:DeployAddin=false -p:LaunchRevit=false
 
 
-      - name: Qualification summary
+      - name: Build CAD Export and unified MSI
         shell: powershell
         run: |
-          "AP ribbon compilation only; CAD Export not packaged. No release MSI produced." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
-  sdk-preflight:
-    runs-on: windows-2025
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+          $ErrorActionPreference = 'Stop'
+          & '.\.ci\v241-build-integrated.ps1'
+
+      - name: Upload verified MSI candidate and checksum
+        uses: actions/upload-artifact@v4
         with:
-          dotnet-version: '10.0.110'
-      - name: Check Windows build tools
-        shell: powershell
-        run: |
-          $ErrorActionPreference='Stop'
-          dotnet --list-sdks
-          $sdk = Join-Path ${env:ProgramFiles(x86)} 'Microsoft SDKs\Windows'
-          $tlbimp = Get-ChildItem -Path $sdk -Filter TlbImp.exe -Recurse -File | Where-Object {$_.DirectoryName -match '\\x64$'} | Select-Object -First 1
-          if (!$tlbimp) { throw 'TlbImp x64 missing' }
-          $tlbimp.FullName
-          dotnet tool install wix --version 7.0.1 --tool-path (Join-Path $env:RUNNER_TEMP 'ap-wix')
-          if($LASTEXITCODE -ne 0){throw 'WiX restore failed'}
-      - name: Validate ObjectARX 2021 download and references
-        shell: powershell
-        run: |
-          $ErrorActionPreference='Stop'
-          $sdkDir=Join-Path $env:RUNNER_TEMP 'ObjectARX2021'
-          New-Item -ItemType Directory $sdkDir -Force | Out-Null
-          $archive=Join-Path $env:RUNNER_TEMP 'ObjectARX2021.exe'
-          Invoke-WebRequest -UseBasicParsing -Uri 'https://download.autodesk.com/esd/objectarx/2021/objectarx_for_autocad_2021_win_64bit_dlm.sfx.exe' -OutFile $archive
-          & 7z.exe x -y ("-o"+$sdkDir) $archive
-          if($LASTEXITCODE -ne 0){throw 'SDK extraction failed'}
-          foreach($name in 'acmgd.dll','acdbmgd.dll','accoremgd.dll','AcSmComponents24.tlb'){
-            $f=Get-ChildItem -LiteralPath $sdkDir -Filter $name -Recurse -File | Select-Object -First 1
-            if(!$f){throw "SDK reference missing: $name"}
-            Write-Host ("SDK reference found: "+$f.Name+" ("+$f.Length+" bytes)")
-          }
-          "SDK reference preflight passed; no Autodesk DLLs uploaded." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          name: AP-BIM-Tools-2.4.1-MSI-candidate-CAD2021
+          path: |
+            output/AP-BIM-Tools-2.4.1.msi
+            output/SHA256.txt
+          if-no-files-found: error
+          retention-days: 90
