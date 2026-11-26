@@ -7,6 +7,7 @@ function One([string]$s,[string]$a,[string]$b){if(([regex]::Matches($s,[regex]::
 $c=Read-Source 'Revit\Command.cs'
 $c=One $c 'Path.Combine(Path.GetTempPath(),"CADSheetExport",Guid.NewGuid().ToString("N"))' 'Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"CSE","J"+Guid.NewGuid().ToString("N").Substring(0,12))'
 $c=One $c 'Silent=mode.SelectedIndex!=2' 'Silent=true'
+$c=One $c 'if(mode.SelectedIndex!=2&&!File.Exists(core))' 'if(!File.Exists(core))'
 $c=One $c 'psi.EnvironmentVariables["CSE_JOB"]=job;' 'psi.EnvironmentVariables["CSE_ACAD_EXE"]=exe;psi.EnvironmentVariables["CSE_JOB"]=job;'
 $c=One $c 'string starter=Path.Combine(Path.GetDirectoryName(seed),"_CSE_SEED_"+Guid.NewGuid().ToString("N")+".dwg");File.Copy(seed,starter);' 'string starter=Path.Combine(Path.GetDirectoryName(seed),"_BOOT.dwg");File.Copy(seed,starter,true);File.SetAttributes(starter,FileAttributes.Normal);'
 $c=One $c 'Chế độ Model dùng EXPORTLAYOUT, cần AutoCAD Desktop chạy tạm thời và sẽ đóng khi xong. Tiếp tục?' 'Chế độ Model chuyển từng Sheet bằng phiên AutoCAD riêng, sau đó gộp nền. Có thể lâu hơn chế độ Layout. Tiếp tục?'
@@ -108,8 +109,8 @@ namespace CadSheetExport {
    if(System.Diagnostics.Process.GetProcessesByName("acad").Length!=0)throw new System.Exception("AutoCAD desktop already running; isolated conversion refused.");
    string script=Path.Combine(work,"F"+index.ToString("D4")+".scr");
    string status=Path.Combine(work,"F"+index.ToString("D4")+".txt");
-   string body=@"(progn (setq csefd (getvar ""FILEDIA"") csecd (getvar ""CMDDIA"")) (setvar ""FILEDIA"" 0) (setvar ""CMDDIA"" 0) (setq cser (vl-catch-all-apply '(lambda () (setvar ""CTAB"" (getenv ""CSE_FLAT_LAYOUT"")) (if (> (getvar ""CVPORT"") 1) (command ""_.PSPACE"")) (command ""_.EXPORTLAYOUT"" (strcat (getvar ""DWGPREFIX"") (getenv ""CSE_FLAT_NAME"")))))) (setq csef (open (getenv ""CSE_FLAT_STATUS"") ""w"")) (if csef (progn (write-line (if (vl-catch-all-error-p cser) (vl-catch-all-error-message cser) ""COMMAND_RETURNED"") csef) (close csef))) (setvar ""FILEDIA"" csefd) (setvar ""CMDDIA"" csecd) (princ))";
-   File.WriteAllText(script,body+"\r\n",System.Text.Encoding.ASCII);
+   string body=@"(progn (setq csefd (getvar ""FILEDIA"") csecd (getvar ""CMDDIA"")) (setvar ""FILEDIA"" 0) (setvar ""CMDDIA"" 0) (setq cser (vl-catch-all-apply '(lambda () (setvar ""CTAB"" (getenv ""CSE_FLAT_LAYOUT"")) (if (> (getvar ""CVPORT"") 1) (command ""_.PSPACE"")) (command ""_.EXPORTLAYOUT"" (strcat (getvar ""DWGPREFIX"") (getenv ""CSE_FLAT_NAME"")))))) (setvar ""FILEDIA"" csefd) (setvar ""CMDDIA"" csecd) (setq csef (open (getenv ""CSE_FLAT_STATUS"") ""w"")) (if csef (progn (write-line (if (vl-catch-all-error-p cser) (vl-catch-all-error-message cser) ""COMMAND_RETURNED"") csef) (close csef))) (princ))";
+   File.WriteAllText(script,body+"\r\n_.QUIT\r\n_N\r\n",System.Text.Encoding.ASCII);
    var psi=new System.Diagnostics.ProcessStartInfo(exe,"\""+sheet.FinalDwg+"\" /nologo /b \""+script+"\""){UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(exe),WindowStyle=System.Diagnostics.ProcessWindowStyle.Minimized};
    psi.EnvironmentVariables.Remove("CSE_JOB");
    psi.EnvironmentVariables.Remove("CSE_OWN_WORKER");
@@ -122,7 +123,7 @@ namespace CadSheetExport {
     var clock=System.Diagnostics.Stopwatch.StartNew();
     bool completed=false;
     try{
-     while(!proc.HasExited&&clock.Elapsed<TimeSpan.FromMinutes(5)){
+     while(clock.Elapsed<TimeSpan.FromMinutes(5)){
       if(File.Exists(status)){
        string detail;try{detail=File.ReadAllText(status);}catch(IOException){System.Threading.Thread.Sleep(250);continue;}
        say("NATIVE RESULT "+sheet.Number+" | "+detail.Trim());
@@ -130,12 +131,13 @@ namespace CadSheetExport {
        if(!File.Exists(flat)||new FileInfo(flat).Length==0)throw new System.Exception("EXPORTLAYOUT returned without DWG: "+flat);
        completed=true;break;
       }
+      if(proc.HasExited)break;
       System.Threading.Thread.Sleep(250);
      }
      if(!completed)throw new System.Exception("Native EXPORTLAYOUT timed out or process exited before status: "+sheet.Number);
      // This process was launched solely for this staged sheet; do not save changes to it.
      // Try graceful close; then terminate only the owned process if a modal prompt remains.
-     try{proc.CloseMainWindow();}catch(System.Exception){}
+     if(!proc.WaitForExit(15000)){try{proc.CloseMainWindow();}catch(System.Exception){}}
      if(!proc.WaitForExit(8000)){proc.Kill();if(!proc.WaitForExit(10000))throw new System.Exception("Owned AutoCAD did not close");}
     }finally{
      if(!proc.HasExited){try{proc.Kill();proc.WaitForExit(10000);}catch(System.Exception ex){say("Owned worker cleanup: "+ex.Message);}}
