@@ -45,9 +45,9 @@ $c=$c.Substring(0,$start)+@'
    // Select the only populated paper layout (viewport-only sheets are supported).
    // No absolute user path is embedded in the script; use the active DWGPREFIX.
    string body=@"(progn (setq csefd (getvar ""FILEDIA"") csecd (getvar ""CMDDIA"") csep (getvar ""DWGPREFIX"")) (setvar ""FILEDIA"" 0) (setvar ""CMDDIA"" 0) (setq cser (vl-catch-all-apply '(lambda () (setq csel (vl-remove-if-not '(lambda (n) (or (ssget ""_X"" (list (cons 410 n) (cons 0 ""~VIEWPORT""))) (and (setq csev (ssget ""_X"" (list (cons 410 n) (cons 0 ""VIEWPORT"")))) (> (sslength csev) 1)))) (layoutlist))) (if (= (length csel) 1) (progn (setvar ""CTAB"" (car csel)) (if (> (getvar ""CVPORT"") 1) (command ""_.PSPACE"")) (command ""_.EXPORTLAYOUT"" (strcat csep ""F.dwg"")) (if (findfile (strcat csep ""F.dwg"")) ""OK"" ""NO_DWG"")) ""AMBIGUOUS_OR_EMPTY_LAYOUT"")))) (setvar ""FILEDIA"" csefd) (setvar ""CMDDIA"" csecd) (setq csef (open (strcat csep ""F.done"") ""w"")) (if csef (progn (write-line (if (vl-catch-all-error-p cser) (vl-catch-all-error-message cser) cser) csef) (close csef))) (princ))";
-   File.WriteAllText(script,body+"\r\n_.QUIT\r\n_N\r\n",System.Text.Encoding.ASCII);
+   File.WriteAllText(script,(index==1?"CSEPROBE\r\n":"")+body+"\r\n_.QUIT\r\n_N\r\n",System.Text.Encoding.ASCII);
    var psi=new System.Diagnostics.ProcessStartInfo(exe,"\""+item.Source+"\" /nologo /b \""+script+"\""){UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(exe),WindowStyle=System.Diagnostics.ProcessWindowStyle.Minimized};
-   psi.EnvironmentVariables.Remove("CSE_JOB");psi.EnvironmentVariables.Remove("CSE_OWN_WORKER");
+   psi.EnvironmentVariables.Remove("CSE_JOB");psi.EnvironmentVariables.Remove("CSE_OWN_WORKER");if(index==1)psi.EnvironmentVariables["CSE_PROBE_DIR"]=work;else psi.EnvironmentVariables.Remove("CSE_PROBE_DIR");
    File.AppendAllText(log,DateTime.Now.ToString("o")+" | START "+item.Number+" | "+item.Source+Environment.NewLine);
    using(var proc=System.Diagnostics.Process.Start(psi)){
     if(proc==null)throw new Exception("Cannot start AutoCAD");
@@ -70,6 +70,7 @@ $c=$c.Substring(0,$start)+@'
      if(!proc.WaitForExit(8000)){proc.Kill();if(!proc.WaitForExit(10000))throw new Exception("Owned CAD session did not exit.");}
     }finally{if(!proc.HasExited){try{proc.Kill();proc.WaitForExit(10000);}catch(Exception){}}}
    }
+   if(index==1){string probe=Path.Combine(work,"probe.result");if(!File.Exists(probe)||File.ReadAllText(probe)!="PASS")throw new Exception("AutoCAD DWG engine preflight failed: "+(File.Exists(probe)?File.ReadAllText(probe):"CSEPROBE was not loaded")+" | See probe.log");}
    using(var f=new FileStream(flat,FileMode.Open,FileAccess.Read,FileShare.Read)){if(f.Length<6)throw new Exception("Invalid DWG: "+flat);var b=new byte[6];if(f.Read(b,0,6)!=6||!System.Text.Encoding.ASCII.GetString(b).StartsWith("AC10",StringComparison.Ordinal))throw new Exception("Invalid DWG header: "+flat);}
    File.AppendAllText(log,"DWG READY "+item.Number+" | "+new FileInfo(flat).Length+" bytes"+Environment.NewLine);
    return flat;
@@ -81,11 +82,11 @@ $c=$c.Substring(0,$start)+@'
    if(!File.Exists(dll))throw new FileNotFoundException("AutoCAD Desktop worker missing",dll);
    File.Copy(seed,starter,true);File.SetAttributes(starter,FileAttributes.Normal);
    // ApplicationPlugins bundle registers CSEAUTO at startup or on command invocation.
-   File.WriteAllText(script,"CSEAUTO\r\n",System.Text.Encoding.ASCII);
+   File.WriteAllText(script,"CSEPROBE\r\nCSEAUTO\r\n",System.Text.Encoding.ASCII);
    string args="\""+starter+"\" /nologo /b \""+script+"\"";
    var psi=new System.Diagnostics.ProcessStartInfo(exe,args){UseShellExecute=false,WorkingDirectory=Path.GetDirectoryName(exe),WindowStyle=System.Diagnostics.ProcessWindowStyle.Minimized};
-   psi.EnvironmentVariables["CSE_JOB"]=job;psi.EnvironmentVariables["CSE_OWN_WORKER"]="1";
-   string state=Path.Combine(work,"state.txt"),log=Path.Combine(work,"worker_launch.log");
+   psi.EnvironmentVariables["CSE_JOB"]=job;psi.EnvironmentVariables["CSE_OWN_WORKER"]="1";psi.EnvironmentVariables["CSE_PROBE_DIR"]=work;
+   string state=Path.Combine(work,"state.txt"),log=Path.Combine(work,"worker_launch.log");string previousProbe=Path.Combine(work,"probe.result");if(File.Exists(previousProbe))File.Delete(previousProbe);
    File.WriteAllText(state,"LAUNCHED");File.AppendAllText(log,DateTime.Now.ToString("o")+" | DESKTOP="+exe+" | DLL="+dll+" | Args="+args+Environment.NewLine);
    using(var proc=System.Diagnostics.Process.Start(psi)){
     if(proc==null)throw new Exception("Không khởi động được AutoCAD Desktop.");
@@ -108,6 +109,10 @@ Write-Source 'Revit\Command.cs' $c
 $p=Read-Source 'Cad\Processor.cs'
 $p=One $p 's.FinalDwg=Normalize(final,s.Layout,v);' 's.FinalDwg=j.Model?final:Normalize(final,s.Layout,v);if(j.Model)ValidateFlattened(final,s.Number);'
 $p=One $p 'MergeModelIsolated(success,merged,v,j.Columns,j.Gap,work,Say);' 'MergeFlattened(success,merged,v,j.Columns,j.Gap,Say);'
+
+# Gate every desktop worker job on a real in-host smoke test.
+$p=One $p 'await SafeRun(path,ed,false);if(Environment.GetEnvironmentVariable("CSE_OWN_WORKER")=="1")' 'string probe=Path.Combine(Path.GetDirectoryName(path),"probe.result");if(Environment.GetEnvironmentVariable("CSE_OWN_WORKER")=="1"&&(!File.Exists(probe)||File.ReadAllText(probe)!="PASS")){File.WriteAllText(Path.Combine(Path.GetDirectoryName(path),"state.txt"),"FAILED | AutoCAD DWG engine preflight failed | "+(File.Exists(probe)?File.ReadAllText(probe):"CSEPROBE not loaded"));}else await SafeRun(path,ed,false);if(Environment.GetEnvironmentVariable("CSE_OWN_WORKER")=="1")'
+
 Write-Source 'Cad\Processor.cs' $p
 $m=Read-Source 'Cad\ModelMerge.cs'
 $start=$m.IndexOf('   using(var target=new Database(true,true))')
@@ -123,6 +128,38 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 namespace CadSheetExport {
  public partial class Processor {
+  [Autodesk.AutoCAD.Runtime.CommandMethod("CSEPROBE",Autodesk.AutoCAD.Runtime.CommandFlags.Session)]
+  public void Probe(){
+   string work=Environment.GetEnvironmentVariable("CSE_PROBE_DIR");
+   if(string.IsNullOrWhiteSpace(work)||!Directory.Exists(work))return;
+   string result=Path.Combine(work,"probe.result"),log=Path.Combine(work,"probe.log");
+   string folder=Directory.CreateDirectory(Path.Combine(work,"PROBE_"+Guid.NewGuid().ToString("N").Substring(0,8))).FullName;
+   try{
+    File.AppendAllText(log,DateTime.Now.ToString("o")+" | "+typeof(Processor).Assembly.Location+" | "+Environment.Version+Environment.NewLine);
+    var test=new List<SheetItem>();
+    for(int i=0;i<2;i++){
+     string source=Path.Combine(folder,"P"+i+".dwg");
+     using(var db=new Database(true,true)){
+      using(var tr=db.TransactionManager.StartTransaction()){
+       var bt=(BlockTable)tr.GetObject(db.BlockTableId,OpenMode.ForRead);
+       var ms=(BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace],OpenMode.ForWrite);
+       var line=new Line(new Point3d(0,0,0),new Point3d(100+i,50+i,0));
+       ms.AppendEntity(line);tr.AddNewlyCreatedDBObject(line,true);tr.Commit();
+      }
+      db.SaveAs(source,DwgVersion.AC1032);
+     }
+     string packed=Path.Combine(folder,"S"+i+".dwg");
+     new LinkPack(folder,DwgVersion.AC1032,t=>File.AppendAllText(log,t+Environment.NewLine)).Publish(source,packed,"P"+i);
+     ValidateFlattened(packed,"PROBE-"+i);
+     test.Add(new SheetItem{Number="PROBE-"+i,FinalDwg=packed});
+    }
+    string target=Path.Combine(folder,"M.dwg");
+    MergeFlattened(test,target,DwgVersion.AC1032,2,10,t=>File.AppendAllText(log,t+Environment.NewLine));
+    LinkPack.Check(target);
+    File.AppendAllText(log,"PASS: side DB save/read, pack, merge two models and reopen."+Environment.NewLine);
+    File.WriteAllText(result,"PASS");
+   }catch(System.Exception ex){File.AppendAllText(log,ex+Environment.NewLine);File.WriteAllText(result,"FAIL | "+ex.Message);}
+  }
   static void ValidateFlattened(string flat,string number){
    using(var check=Open(flat))using(var tr=check.TransactionManager.StartTransaction()){
     var bt=(BlockTable)tr.GetObject(check.BlockTableId,OpenMode.ForRead);
