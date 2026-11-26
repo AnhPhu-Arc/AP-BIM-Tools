@@ -19,7 +19,7 @@ Write-Source 'Shared\Job.cs' $job
 $c=Read-Source 'Revit\Command.cs'
 $c=One $c 'Thư mục đầu ra trực tiếp (không ghi đè)' 'Thư mục đầu ra (chỉ hỏi khi trùng tên)'
 $c=One $c 'var root=Path.GetFullPath(folder.Text);if(Directory.GetFiles(root,"*.dwg").Length>0||Directory.GetFiles(root,"*.dst").Length>0)throw new Exception("Thư mục đã có DWG/DST. Chọn thư mục khác hoặc di chuyển hồ sơ cũ; không tự ghi đè.");' 'var root=Path.GetFullPath(folder.Text);'
-$c=One $c 'var names=chosen.Select(sh=>Names.Unique(Render(sh,pattern),used)).ToList();' 'var names=chosen.Select(sh=>Render(sh,pattern)).ToList();if(mode.SelectedIndex==0&&names.Distinct(StringComparer.OrdinalIgnoreCase).Count()!=names.Count)throw new Exception("Quy tắc đặt tên tạo DWG trùng nhau. Hãy chọn thêm tham số phân biệt Sheet.");'
+$c=One $c 'var names=chosen.Select(sh=>Names.Unique(Render(sh,pattern),used)).ToList();' 'var names=chosen.Select(sh=>mode.SelectedIndex==0?Names.RequestedStem(Render(sh,pattern),".dwg"):Names.FileStem(sh.SheetNumber)).ToList();if(mode.SelectedIndex==0&&names.Distinct(StringComparer.OrdinalIgnoreCase).Count()!=names.Count)throw new Exception("Quy tắc đặt tên tạo DWG trùng nhau. Hãy chọn thêm tham số phân biệt Sheet.");'
 $c=One $c 'CombinedName=Names.FileStem(combined.Text),SetName=Names.FileStem(setName.Text)' 'CombinedName=mode.SelectedIndex==0?"Combined":Names.RequestedStem(combined.Text,".dwg"),SetName=dst.Checked&&mode.SelectedIndex!=2?Names.RequestedStem(setName.Text,".dst"):"Sheet Set"'
 $c=One $c 'if((job.Combine||job.Model)&&names.Contains(job.CombinedName,StringComparer.OrdinalIgnoreCase))job.CombinedName+="_TOTAL";' @'
 var planned=(job.Combine||job.Model?new[]{job.CombinedName+".dwg"}:names.Select(n=>n+".dwg").ToArray()).ToList();
@@ -33,7 +33,7 @@ var planned=(job.Combine||job.Model?new[]{job.CombinedName+".dwg"}:names.Select(
    }
 '@
 # Intermediate Revit export files live in separate folders; keep exact final names for Mode A.
-$c=One $c 'bool ok=doc.Export(target,names[i]+".dwg",new List<ElementId>{sh.Id},opt);' 'bool ok=doc.Export(target,"CSE_SOURCE_"+(i+1).ToString("D4"),new List<ElementId>{sh.Id},opt);'
+$c=One $c 'bool ok=doc.Export(target,names[i]+".dwg",new List<ElementId>{sh.Id},opt);' 'bool ok=doc.Export(target,"CSE_SOURCE_"+(i+1).ToString("D4")+".dwg",new List<ElementId>{sh.Id},opt);'
 $c=One $c 'Path.GetFileNameWithoutExtension(p).Equals(names[i],StringComparison.OrdinalIgnoreCase)' 'Path.GetFileNameWithoutExtension(p).Equals("CSE_SOURCE_"+(i+1).ToString("D4"),StringComparison.OrdinalIgnoreCase)'
 Write-Source 'Revit\Command.cs' $c
 $p=Read-Source 'Cad\Processor.cs'
@@ -56,8 +56,8 @@ $run=@'
    string output=string.IsNullOrWhiteSpace(j.Output)?Directory.CreateDirectory(Path.Combine(work,"RECOVER_"+Guid.NewGuid().ToString("N").Substring(0,6))).FullName:Path.GetFullPath(j.Output);
    if(!Directory.Exists(output))throw new System.Exception("Output directory missing.");
    if(!j.DirectOutput&&!string.IsNullOrWhiteSpace(j.Output)&&!string.Equals(Path.GetDirectoryName(work),output,StringComparison.OrdinalIgnoreCase))throw new System.Exception("Invalid output root.");
-   string runId="CSE_"+Guid.NewGuid().ToString("N");
-   string stage=Directory.CreateDirectory(Path.Combine(work,"stage_"+runId)).FullName;
+   string runId="CSE_"+Guid.NewGuid().ToString("N").Substring(0,20);
+   string stage=Directory.CreateDirectory(Path.Combine(work,"stage_"+runId.Substring(4,8))).FullName;
    var success=new List<SheetItem>();DwgVersion v=Version(j.Version);var used=new HashSet<string>(StringComparer.OrdinalIgnoreCase);var pack=new LinkPack(stage,v,Say);
    var planned=(j.Combine||j.Model?new[]{Names.RequestedStem(j.CombinedName,".dwg")+".dwg"}:j.Sheets.Select(s=>Names.RequestedStem(s.FileName,".dwg")+".dwg").ToArray()).ToList();
    if(j.CreateDst&&!j.Model)planned.Add(Names.RequestedStem(j.SetName,".dst")+".dst");
@@ -103,7 +103,7 @@ $run=@'
     string stagedLinks=Path.Combine(stage,"Links",runId);
     if(Directory.Exists(stagedLinks)){
      installedLinks=Path.Combine(output,"Links",runId);
-     if(Directory.Exists(installedLinks))throw new System.Exception("Unexpected Links namespace collision.");
+     if(Directory.Exists(installedLinks)){installedLinks=null;throw new System.Exception("Unexpected Links namespace collision.");}
      Directory.CreateDirectory(installedLinks);CopyTree(stagedLinks,installedLinks);
     }
     foreach(var group in success.GroupBy(x=>x.FinalDwg,StringComparer.OrdinalIgnoreCase)){
@@ -127,13 +127,20 @@ $run=@'
     if(j.CreateDst&&!j.Model){
      string name=Names.RequestedStem(j.SetName,".dst")+".dst",dest=Path.Combine(output,name);
      CheckDestination(name);
-     string bak=null;
-     if(File.Exists(dest)){
-      if(!approvals.Contains(name))throw new System.Exception("Unapproved overwrite: "+name);
-      bak=Path.Combine(output,".cse_"+Guid.NewGuid().ToString("N")+".backup");File.Move(dest,bak);
-     }
-     published.Add(new KeyValuePair<string,string>(dest,bak));
-     MakeDst(dest,j.SetName,success);
+     // Create DST in the destination directory under a unique temporary name.
+     // Relative sheet references remain valid after the file is renamed.
+     string pendingDst=Path.Combine(output,"_CSE_DST_"+Guid.NewGuid().ToString("N")+".dst");
+     try{
+      MakeDst(pendingDst,j.SetName,success);
+      CheckDestination(name);
+      if(File.Exists(dest)){
+       if(!approvals.Contains(name))throw new System.Exception("Unapproved overwrite: "+name);
+       string bak=Path.Combine(output,".cse_"+Guid.NewGuid().ToString("N")+".backup");
+       File.Replace(pendingDst,dest,bak);published.Add(new KeyValuePair<string,string>(dest,bak));
+      }else{
+       File.Move(pendingDst,dest);published.Add(new KeyValuePair<string,string>(dest,null));
+      }
+     }finally{if(File.Exists(pendingDst))File.Delete(pendingDst);}
      foreach(var group in success.GroupBy(s=>s.FinalDwg,StringComparer.OrdinalIgnoreCase)){
       StampAssociation(group.First(),dest,v);LinkPack.Check(group.Key);
      }
