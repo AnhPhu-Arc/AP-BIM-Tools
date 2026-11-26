@@ -76,9 +76,26 @@ if(!$tlb){throw 'AcSmComponents24.tlb absent after official SDK extraction; cann
 $tools=Join-Path ${env:ProgramFiles(x86)} 'Microsoft SDKs\Windows'
 $tlbimp=Get-ChildItem -LiteralPath $tools -Filter TlbImp.exe -Recurse -File|Where-Object {$_.DirectoryName -match '\\x64$'}|Sort-Object FullName -Descending|Select-Object -First 1
 if(!$tlbimp){throw 'TlbImp x64 missing'}
-$sso=Join-Path $work 'CadSso.dll'
-Run $tlbimp.FullName @($tlb.FullName,("/out:"+$sso),'/namespace:CadSso','/machine:X64')
-[void](Need $sso)
+# Resolve ObjectDBX/ActiveX references explicitly. On a clean runner these
+# type libraries are not registered, so bare TlbImp silently loses members.
+$interop=Join-Path $work 'interop'
+New-Item -ItemType Directory $interop -Force | Out-Null
+$axdb=Find-Ref $sdkDir 'axdb24enu.tlb'
+$acax=Find-Ref $sdkDir 'acax24enu.tlb'
+if(!$axdb -or !$acax){throw 'ObjectARX ActiveX dependencies axdb24enu.tlb / acax24enu.tlb not found'}
+$dbx=Join-Path $interop 'AxDbInterop.dll'
+$activex=Join-Path $interop 'AcadActiveXInterop.dll'
+$sso=Join-Path $interop 'CadSso.dll'
+Run $tlbimp.FullName @($axdb.FullName,("/out:"+$dbx),'/machine:X64')
+Run $tlbimp.FullName @($acax.FullName,("/out:"+$activex),("/reference:"+$dbx),("/tlbreference:"+$axdb.FullName),'/machine:X64')
+Run $tlbimp.FullName @($tlb.FullName,("/out:"+$sso),'/namespace:CadSso','/machine:X64',("/reference:"+$dbx),("/reference:"+$activex),("/tlbreference:"+$axdb.FullName),("/tlbreference:"+$acax.FullName))
+foreach($file in @($dbx,$activex,$sso)){[void](Need $file)}
+# Assert the imported API contains the actual method used for sheet import.
+$loaded=@([Reflection.Assembly]::LoadFrom($dbx),[Reflection.Assembly]::LoadFrom($activex),[Reflection.Assembly]::LoadFrom($sso))
+$type=$loaded[2].GetType('CadSso.AcSmAcDbLayoutReference',$true)
+$types=@($type)+@($type.GetInterfaces())
+if(!(@($types|ForEach-Object {$_.GetMethods()}|Where-Object {$_.Name -eq 'SetName'}).Count)){throw 'Incomplete COM import: SetName not available'}
+Write-Host 'COM API check passed: AcSmAcDbLayoutReference.SetName'
 # Compile all three CAD modules.
 $revout=Join-Path $work 'Revit';$cadout=Join-Path $work 'Cad';$coreout=Join-Path $work 'Core'
 Copy-Item -LiteralPath (Join-Path $root 'global.json') -Destination (Join-Path $module 'global.json') -Force
@@ -89,6 +106,10 @@ try{
   Run 'dotnet' @('build',$pair[0],'-c','Release','-o',$pair[1],'-p:TargetFramework=net48',("-p:CadPath="+$cp),("-p:SsoPath="+$sso))
  }
 }finally{Pop-Location}
+# Keep generated interop dependencies adjacent to both managed workers.
+foreach($dest in @($cadout,$coreout)){
+ foreach($ref in @($dbx,$activex)){Copy-Item -LiteralPath $ref -Destination $dest -Force}
+}
 foreach($f in @((Join-Path $revout 'CadSheetExport.Revit.dll'),(Join-Path $cadout 'CadSheetExport.AutoCAD.dll'),(Join-Path $coreout 'CadSheetExport.Core.dll'),(Join-Path $cadout 'CadSso.dll'),(Join-Path $coreout 'CadSso.dll'))){[void](Need $f)}
 $publish=@()
 foreach($y in 2023..2027){
@@ -166,7 +187,7 @@ public static class ApMsiRead {
 }
 '@
 $names=@([ApMsiRead]::Query($msi,'SELECT FileName FROM File')|ForEach-Object {($_ -split '\|')[-1]})
-$expected=@{'AP.BimTools.dll'=5;'CadSheetExport.Revit.dll'=1;'zzz.AP.BimTools.CadExport.addin'=1;'CadSheetExport.AutoCAD.dll'=1;'CadSheetExport.Core.dll'=1;'CadSso.dll'=2;'PackageContents.xml'=1}
+$expected=@{'AP.BimTools.dll'=5;'CadSheetExport.Revit.dll'=1;'zzz.AP.BimTools.CadExport.addin'=1;'CadSheetExport.AutoCAD.dll'=1;'CadSheetExport.Core.dll'=1;'CadSso.dll'=2;'AxDbInterop.dll'=2;'AcadActiveXInterop.dll'=2;'PackageContents.xml'=1}
 foreach($n in $expected.Keys){$count=@($names|Where-Object {$_ -ieq $n}).Count;if($count -lt $expected[$n]){throw "MSI file table incomplete: $n ($count)"}}
 if(@($names|Where-Object {$_ -match '^(RevitAPI(UI)?|acmgd|acdbmgd|accoremgd|AcSmComponents)\.dll$'}).Count){throw 'Vendor references unexpectedly packaged'}
 $cabs=@([ApMsiRead]::Query($msi,'SELECT Cabinet FROM Media'))
