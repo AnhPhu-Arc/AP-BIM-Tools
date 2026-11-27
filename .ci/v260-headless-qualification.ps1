@@ -50,6 +50,7 @@ $l=One $l 'public class HeadlessLoader {' @'
   }
   public void Terminate(){}
 '@
+$l=One $l '[assembly: CommandClass(typeof(CadSheetExport.HeadlessLoader))]' ("[assembly: CommandClass(typeof(CadSheetExport.HeadlessLoader))]"+[Environment]::NewLine+"[assembly: ExtensionApplication(typeof(CadSheetExport.HeadlessLoader))]")
 Write-Source 'CoreLoader\Loader.cs' $l
 $p=Read-Source 'Cad\Processor.cs'
 $p=One $p 'if(Job.Read(path).Model)throw new System.Exception("Native EXPORTLAYOUT is not supported by this headless worker.");' 'InspectSourceLayouts(Job.Read(path),work);'
@@ -82,7 +83,6 @@ $code=@'
        var ids=layout.GetViewports();ObjectId overall=ids.Count>0?ids[0]:ObjectId.Null;
        File.AppendAllText(log," LAYOUT "+layout.LayoutName+" | objects="+paper.Cast<ObjectId>().Count()+Environment.NewLine);
        foreach(ObjectId id in paper){
-        if(id==overall)continue;
         var obj=tr.GetObject(id,OpenMode.ForRead);
         if(obj is Viewport vp && vp.Number!=1)
          File.AppendAllText(log,"  VP "+vp.Handle+" | center="+vp.CenterPoint+" | direction="+vp.ViewDirection+" | target="+vp.ViewTarget+" | viewCenter="+vp.ViewCenter+" | viewHeight="+vp.ViewHeight+" | width="+vp.Width+" | height="+vp.Height+" | twist="+vp.TwistAngle+" | frozen="+vp.GetFrozenLayers().Count+Environment.NewLine);
@@ -107,7 +107,7 @@ $code=@'
      var entity=st.GetObject(id,OpenMode.ForRead) as Entity;
      if(entity==null)continue;
      if(entity is Viewport vp){
-      if(id==overall||vp.Number==1)continue;
+      if(vp.Number==1)continue;
       throw new System.Exception("FULL HEADLESS MODE C NOT YET QUALIFIED FOR FLOATING VIEWPORT: "+layoutName+" | "+vp.Handle+" | see layout_inventory.log");
      }
      if(entity is ProxyEntity||entity is Ole2Frame||entity is UnderlayReference)throw new System.Exception("Unsupported paper entity "+entity.GetType().Name+" in "+layoutName);
@@ -126,5 +126,15 @@ $code=@'
   }
 '@
 $m=One $m $anchor ($code+[Environment]::NewLine+$anchor)
+$m=One $m 'Merge(layoutTests.Take(1).ToList(),Path.Combine(folder,"Lsingle.dwg"),DwgVersion.AC1032,report);' @'
+Merge(layoutTests.Take(1).ToList(),Path.Combine(folder,"Lsingle.dwg"),DwgVersion.AC1032,report);
+    string paperFlat=Path.Combine(folder,"Fpaper.dwg");
+    FlattenPaperOnly(layoutTests[0].FinalDwg,layoutTests[0].Layout,paperFlat,DwgVersion.AC1032,report);
+    ValidateFlattened(paperFlat,layoutTests[0].Number);
+    bool refusedFloating=false;
+    try{FlattenPaperOnly(layoutTests[1].FinalDwg,layoutTests[1].Layout,Path.Combine(folder,"Funsafe.dwg"),DwgVersion.AC1032,report);}
+    catch(System.Exception ex){if(ex.Message.StartsWith("FULL HEADLESS MODE C NOT YET QUALIFIED",StringComparison.Ordinal))refusedFloating=true;else throw;}
+    if(!refusedFloating)throw new System.Exception("Floating viewport qualification guard failed");
+'@
 Write-Source 'Cad\ModelMerge.cs' $m
 Write-Host 'Qualification: explicit AppBundle, loader INIT, DWG inventory, paper-only Mode C; floating viewport conversion not qualified.'
