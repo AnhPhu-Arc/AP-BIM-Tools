@@ -1,0 +1,2 @@
+# 2.6.6 qualification
+V2.6.5 again fails at Viewport.set_On during preflight. Mode B now creates fresh floating viewport entities rather than cloning them, in a separate Core Console process with actual active target document. Snapshot geometry, layer mapping, clip mapping and persisted checks retained. Child process works only in staging, with explicit result and parent lifetime monitoring. A/C engines and UI remain intact. Requires runtime acceptance on licensed AutoCAD; no user drawings or logs committed.
