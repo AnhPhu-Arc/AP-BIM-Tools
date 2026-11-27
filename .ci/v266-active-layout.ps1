@@ -132,6 +132,14 @@ $m=Read-Source 'Cad\ModelMerge.cs'
 # Explicit guard for uncommon 3D/viewport styles: do not silently downgrade.
 # Standard Revit 2D views, including straight polygon clips, remain supported.
 $m=One $m 'Id=id;LayoutName=name;HandleText=id.Handle.ToString();' 'Id=id;LayoutName=name;HandleText=id.Handle.ToString();if(src.PerspectiveOn||src.FrontClipOn||src.BackClipOn)throw new System.Exception("Mode B viewport camera not qualified: "+name+" | "+src.Handle);'
+$m=One $m 'if(dest.On!=Enabled)dest.On=Enabled;' @'
+    // A fresh resident viewport must have valid physical dimensions before it
+    // is registered in the active layout. Reapply after activation as needed.
+    dest.CenterPoint=Center;dest.Width=Width;dest.Height=Height;
+    dest.ViewDirection=Direction;dest.ViewTarget=Target;dest.TwistAngle=Twist;
+    dest.ViewCenter=ViewCenter;dest.ViewHeight=ViewHeight;
+    if(dest.On!=Enabled)dest.On=Enabled;
+'@
 Write-Source 'Cad\ModelMerge.cs' $m
 
 $l=Read-Source 'CoreLoader\Loader.cs'
