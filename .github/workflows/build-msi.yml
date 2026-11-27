@@ -1,32 +1,19 @@
-name: Build AP-BIM Tools MSI
-
+name: Build AP-BIM Tools 2.6.8 paper frame grid and plot qualification — NOT FINAL
 on:
   workflow_dispatch:
   pull_request:
-    branches: [ main ]
-  push:
-    branches: [ main ]
-    paths:
-      - 'AP-BIM-Tools-v2.0-MSI-BuildReady.zip'
-      - '.github/workflows/build-msi.yml'
-
+    branches: [main]
 permissions:
   contents: read
-
 jobs:
   build:
-    runs-on: windows-latest
-    timeout-minutes: 45
-
+    runs-on: windows-2025
+    timeout-minutes: 55
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 10 SDK
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.110'
-
       - name: Extract AP-BIM Tools source bundle
         shell: powershell
         run: |
@@ -40,7 +27,7 @@ jobs:
             $bytes = [Convert]::FromBase64String((Get-Content $inputPath -Raw).Trim())
             $memory = New-Object IO.MemoryStream(,$bytes)
             $gzip = New-Object IO.Compression.GzipStream($memory, [IO.Compression.CompressionMode]::Decompress)
-            $file = [IO.File]::Create($outputPath)
+            $file = [IO.File]::Create($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($outputPath))
             $gzip.CopyTo($file)
             $file.Dispose(); $gzip.Dispose(); $memory.Dispose()
           }
@@ -48,6 +35,7 @@ jobs:
           Expand-GzipBase64 '.\.ci\v21.patch.gz.b64' '.\.ci\v21.patch'
           git apply --whitespace=nowarn '.\.ci\v21.patch'
           Expand-GzipBase64 '.\.ci\v21-icons.ps1.gz.b64' '.\.ci\v21-icons.ps1'
+          & '.\.ci\v24-ribbon-fix.ps1' -Phase BeforeLegacyScripts
           & '.\.ci\v21-icons.ps1'
           & '.\.ci\fix-v211-icons.ps1'
           & '.\.ci\v22-component-menu.ps1'
@@ -59,59 +47,52 @@ jobs:
                         (Get-Content '.\.ci\v23payload\part03.txt' -Raw) +
                         (Get-Content '.\.ci\v23payload\part04.txt' -Raw)
           $payloadBytes = [Convert]::FromBase64String(($payloadB64 -replace '\\s',''))
-          [IO.File]::WriteAllBytes('.\.ci\v23-files.tar.gz', $payloadBytes)
+          [IO.File]::WriteAllBytes((Join-Path (Get-Location).Path '.ci\v23-files.tar.gz'), $payloadBytes)
           tar -xzf '.\.ci\v23-files.tar.gz' -C '.'
+          & '.\.ci\v24-ribbon-fix.ps1' -Phase AfterPayloadExtract
           & '.\.ci\v23-fix.ps1'
+          & '.\.ci\v24-ribbon-fix.ps1' -Phase Finalize
 
+          $mainProject = '.\source\AP.BimTools\AP.BimTools.csproj'
+          [xml]$proj = Get-Content -LiteralPath $mainProject -Raw -Encoding UTF8
+          $pg = $proj.CreateElement('PropertyGroup')
+          foreach($kv in @(@('PublishAddin','true'),@('DeployAddin','false'),@('LaunchRevit','false'))) { $node=$proj.CreateElement($kv[0]); $node.InnerText=$kv[1]; [void]$pg.AppendChild($node) }
+          [void]$proj.DocumentElement.AppendChild($pg); $proj.Save((Resolve-Path -LiteralPath $mainProject).Path)
           dotnet --info
 
       - name: Build Revit 2023
         shell: powershell
-        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R23
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R23 -p:DeployAddin=false -p:LaunchRevit=false
 
       - name: Build Revit 2024
         shell: powershell
-        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R24
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R24 -p:DeployAddin=false -p:LaunchRevit=false
 
       - name: Build Revit 2025
         shell: powershell
-        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R25
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R25 -p:DeployAddin=false -p:LaunchRevit=false
 
       - name: Build Revit 2026
         shell: powershell
-        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R26
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R26 -p:DeployAddin=false -p:LaunchRevit=false
 
       - name: Build Revit 2027
         shell: powershell
-        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R27
+        run: dotnet build .\AP-BIM-Tools.slnx -c Release.R27 -p:DeployAddin=false -p:LaunchRevit=false
 
-      - name: Build MSI
+
+      - name: Build CAD Export and unified MSI
         shell: powershell
         run: |
-          dotnet tool install wix --version '7.*' --tool-path .\.wix
-          $wix = (Resolve-Path '.\.wix\wix.exe').Path
-          & $wix eula accept wix7
-          $wixVersion = (Get-Item $wix).VersionInfo.FileVersion
-          & $wix extension add -g "WixToolset.UI.wixext/$wixVersion"
-          $env:PATH = "$(Resolve-Path '.\.wix');$env:PATH"
-          dotnet run --project .\install\Installer.csproj -- 2.3.0 '.\source\AP.BimTools\bin\publish\2023' '.\source\AP.BimTools\bin\publish\2024' '.\source\AP.BimTools\bin\publish\2025' '.\source\AP.BimTools\bin\publish\2026' '.\source\AP.BimTools\bin\publish\2027'
+          $ErrorActionPreference = 'Stop'
+          & '.\.ci\v268-build-qualification.ps1'
 
-      - name: Verify MSI
-        shell: powershell
-        run: |
-          Get-ChildItem '.\output\*.msi' | Format-Table Name, Length, LastWriteTime
-          if (!(Test-Path '.\output\AP-BIM-Tools-2.3.0.msi')) { throw 'Expected MSI was not created.' }
-
-      - name: Upload installer
+      - name: Upload qualification artifact (NOT production release)
         uses: actions/upload-artifact@v4
         with:
-          name: AP-BIM-Tools-2.3.0-MSI
-          path: output/AP-BIM-Tools-2.3.0.msi
+          name: AP-BIM-Tools-2.6.8-QUALIFICATION-NOT-FINAL-CAD2021
+          path: |
+            output/AP-BIM-Tools-2.6.8.msi
+            output/SHA256.txt
           if-no-files-found: error
-
-      - name: Upload Revit publish folders
-        uses: actions/upload-artifact@v4
-        with:
-          name: AP-BIM-Tools-2.3.0-Publish
-          path: source/AP.BimTools/bin/publish/**
-          if-no-files-found: warn
+          retention-days: 90

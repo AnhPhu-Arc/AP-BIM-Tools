@@ -1,0 +1,2 @@
+# 2.6.5 qualification
+User reports Modes A and C working. Mode B fails in preflight at Viewport.set_On (eWasErased). New LayoutManager-created and initialized Paper Space owner, exclude original overall viewport, restore floating viewport in its own layout, conditional On setter and reopen validation. Remove outdated Mode C warning and desktop label. A/C engine unchanged. No user drawings or logs committed. CI is compilation and packaging, not AutoCAD runtime acceptance.
