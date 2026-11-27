@@ -115,20 +115,27 @@ $helpers=@'
     string absolute=Path.GetFullPath(Path.IsPathRooted(reference)?reference:Path.Combine(sourceRoot,reference));
     if(!File.Exists(absolute))throw new System.Exception("Raster source missing: "+absolute);
     ObjectId defId;
-    if(!repaired.TryGetValue(original.ImageDefId,out defId)){
-     // Wblock may merge identically named image definitions from different
-     // source dictionaries. Rebuild each actual source association explicitly.
-     var dictionaryId=RasterImageDef.GetImageDictionary(dest);
-     if(dictionaryId.IsNull)dictionaryId=RasterImageDef.CreateImageDictionary(dest);
-     var dictionary=(DBDictionary)dt.GetObject(dictionaryId,OpenMode.ForWrite);
-     var definition=new RasterImageDef{SourceFileName=absolute};
-     definition.Load();
-     defId=dictionary.SetAt("CSE_IMG_"+Guid.NewGuid().ToString("N"),definition);
-     dt.AddNewlyCreatedDBObject(definition,true);
-     repaired.Add(original.ImageDefId,defId);
+    // Reuse the correctly mapped definition and reactor if they survived
+    // deep-clone. Rebuild only if the original association is missing/wrong.
+    var current=image.ImageDefId.IsNull?null:dt.GetObject(image.ImageDefId,OpenMode.ForRead) as RasterImageDef;
+    string mapped=current==null?"":current.SourceFileName;
+    bool same=!string.IsNullOrWhiteSpace(mapped)&&string.Equals(Path.GetFullPath(Path.IsPathRooted(mapped)?mapped:Path.Combine(sourceRoot,mapped)),absolute,StringComparison.OrdinalIgnoreCase);
+    if(same&&!image.ReactorId.IsNull){
+     current.UpgradeOpen();current.SourceFileName=absolute;if(!current.IsLoaded)current.Load();
+    }else{
+     if(!repaired.TryGetValue(original.ImageDefId,out defId)){
+      var dictionaryId=RasterImageDef.GetImageDictionary(dest);
+      if(dictionaryId.IsNull)dictionaryId=RasterImageDef.CreateImageDictionary(dest);
+      var dictionary=(DBDictionary)dt.GetObject(dictionaryId,OpenMode.ForWrite);
+      var definition=new RasterImageDef{SourceFileName=absolute};
+      definition.Load();
+      defId=dictionary.SetAt("CSE_IMG_"+Guid.NewGuid().ToString("N"),definition);
+      dt.AddNewlyCreatedDBObject(definition,true);
+      repaired.Add(original.ImageDefId,defId);
+     }
+     image.ImageDefId=defId;
+     image.AssociateRasterDef((RasterImageDef)dt.GetObject(defId,OpenMode.ForWrite));
     }
-    image.ImageDefId=defId;
-    image.AssociateRasterDef((RasterImageDef)dt.GetObject(defId,OpenMode.ForWrite));
     image.ShowImage=original.ShowImage;
     if(image.ReactorId.IsNull)throw new System.Exception("Raster reactor missing: "+original.Handle);
     say("RASTER MAP "+original.Handle+" -> "+image.Handle+" | "+absolute+" | Show="+image.ShowImage);
@@ -225,6 +232,43 @@ $m=One $m 'for(int i=0;i<2;i++){
 $m=One $m 'if(i==1){
         var bt=(BlockTable)' 'if(i>0){
         var bt=(BlockTable)'
+# Real raster fixture in a paper-only layout. The PNG is synthetic and public-safe.
+$m=One $m 'var layoutTests=new List<SheetItem>();' @'
+var layoutTests=new List<SheetItem>();
+    string imagePath=Path.Combine(Directory.CreateDirectory(Path.Combine(folder,"Links")).FullName,"probe.png");
+    File.WriteAllBytes(imagePath,Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg=="));
+'@
+$m=One $m 'paper.AppendEntity(border);tr.AddNewlyCreatedDBObject(border,true);' @'
+paper.AppendEntity(border);tr.AddNewlyCreatedDBObject(border,true);
+       if(i==0){
+        InDb(db,()=>{
+         var imageDictId=RasterImageDef.GetImageDictionary(db);
+         if(imageDictId.IsNull)imageDictId=RasterImageDef.CreateImageDictionary(db);
+         var imageDict=(DBDictionary)tr.GetObject(imageDictId,OpenMode.ForWrite);
+         var definition=new RasterImageDef{SourceFileName=imagePath};
+         definition.Load();
+         var imageId=imageDict.SetAt("PROBE_LOGO",definition);tr.AddNewlyCreatedDBObject(definition,true);
+         var image=new RasterImage{ImageDefId=imageId,Orientation=new CoordinateSystem3d(new Point3d(10,10,0),new Vector3d(15,0,0),new Vector3d(0,15,0)),ShowImage=true};
+         paper.AppendEntity(image);tr.AddNewlyCreatedDBObject(image,true);
+         RasterImage.EnableReactors(true);image.AssociateRasterDef(definition);
+        });
+       }
+'@
+$m=One $m 'LinkPack.Check(mixed);' @'
+LinkPack.Check(mixed);
+    using(var check=Open(mixed))using(var ct=check.TransactionManager.StartTransaction()){
+     var bt=(BlockTable)ct.GetObject(check.BlockTableId,OpenMode.ForRead);
+     int n=0;foreach(ObjectId bid in bt){
+      var btr=(BlockTableRecord)ct.GetObject(bid,OpenMode.ForRead);
+      foreach(ObjectId eid in btr){if(ct.GetObject(eid,OpenMode.ForRead) is RasterImage image){
+       if(image.ImageDefId.IsNull||image.ReactorId.IsNull||!image.ShowImage)throw new System.Exception("Raster fixture lost its display association");
+       n++;
+      }}
+     }
+     if(n!=1)throw new System.Exception("Raster fixture count mismatch: "+n);
+    }
+    File.AppendAllText(log,"PASS: cloned raster image definition and reactor survive save/reopen."+Environment.NewLine);
+'@
 $m=One $m 'if(names.Count!=2||layoutTests.Any' 'if(names.Count!=layoutTests.Count||layoutTests.Any'
 Write-Source 'Cad\ModelMerge.cs' $m
 $c=Read-Source 'Revit\Command.cs'
