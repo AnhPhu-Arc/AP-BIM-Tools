@@ -1,0 +1,2 @@
+# 2.6.3 qualification
+Three private user logs agree: runtime loader, pack and model smoke passed; unrelated projected-viewport fixture failed before any job processing. A/B/C probes now independent. Explicitly initialize viewport geometry only after append to database. Preserve unsupported-view guards; log each flag. Support straight closed planar polyline clips in 2D top projection. CI checks compilation and installer only; no claim that user DWG exports pass. No user logs or drawings committed.
