@@ -1,4 +1,4 @@
-name: Build AP-BIM Tools 2.5.1 unified MSI candidate
+name: Build AP-BIM Tools 2.6.0 headless qualification — NOT FINAL
 on:
   workflow_dispatch:
   pull_request:
@@ -85,14 +85,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & '.\.ci\v251-build-integrated.ps1'
+          & '.\.ci\v260-build-qualification.ps1'
 
-      - name: Upload verified MSI candidate and checksum
+      - name: Upload qualification artifact (NOT production release)
         uses: actions/upload-artifact@v4
         with:
-          name: AP-BIM-Tools-2.5.1-MSI-candidate-CAD2021
+          name: AP-BIM-Tools-2.6.0-QUALIFICATION-NOT-FINAL-CAD2021
           path: |
-            output/AP-BIM-Tools-2.5.1.msi
+            output/AP-BIM-Tools-2.6.0.msi
             output/SHA256.txt
           if-no-files-found: error
           retention-days: 90
