@@ -16,7 +16,7 @@ cancel.Enabled=true;cancel.Text="Dừng xử lý CAD";
      bool publishing=File.Exists(Path.Combine(work,"publish.started"));
      cancel.Enabled=!publishing;cancel.Text=publishing?"Đang bàn giao...":"Dừng xử lý CAD";
      string phase=ReadWorkerProgress(work);
-     status.Text=uiClock.Elapsed.ToString(@"hh\:mm\:ss")+" | "+phase;
+     status.Text=uiClock.Elapsed.ToString(@"hh\:mm\:ss")+" | "+(File.Exists(Path.Combine(work,"publish.wait"))?"Cảnh báo: bàn giao đang chờ; không tắt CAD. | ":"")+phase;
     }
     WF.Application.DoEvents();
     if(stop&&!File.Exists(Path.Combine(work,"publish.started"))){
@@ -42,7 +42,7 @@ $helper=@'
    string[] names=phase=="PREFLIGHT"?new[]{"probe.log","headless_loader.log"}:new[]{"cad_process.log","layout_inventory.log","headless_loader.log"};
    string detail="";
    foreach(string name in names){detail=TailLine(Path.Combine(work,name));if(!string.IsNullOrWhiteSpace(detail))break;}
-   if(detail.Length>130)detail=detail.Substring(0,130)+"...";
+   if(detail.Length>100)detail=detail.Substring(0,100)+"...";
    return (string.IsNullOrWhiteSpace(phase)?"Khởi động engine":phase)+(detail.Length>0?" | "+detail:"");
   }
   static bool HasTerminalState(string s){
@@ -82,12 +82,12 @@ $new=@'
      pulse();
      if(clock.Elapsed-lastPoll<TimeSpan.FromSeconds(1))continue;
      lastPoll=clock.Elapsed;
-     string phase=TailLine(state);
+     string phase;try{phase=File.ReadAllText(state);}catch(IOException){continue;}
      if(HasTerminalState(phase)){
       if(!terminalAt.HasValue)terminalAt=clock.Elapsed;
       if(clock.Elapsed-terminalAt.Value>TimeSpan.FromSeconds(15)){
        File.AppendAllText(log,"Terminal state received; closing owned Core Console after shutdown timeout."+Environment.NewLine);
-       if(!proc.HasExited){proc.Kill();proc.WaitForExit(10000);}break;
+       if(!proc.HasExited){proc.Kill();if(!proc.WaitForExit(10000))throw new Exception("CAD engine returned a result but could not be closed. "+work);}break;
       }
       continue;
      }
@@ -108,6 +108,7 @@ $new=@'
       // diagnostic rather than force-killing a process with live DWG/DST backups.
       if(!publishWarned){
        publishWarned=true;
+       File.WriteAllText(Path.Combine(work,"publish.wait"),reason);
        File.AppendAllText(log,"PUBLISH WAIT: "+reason+"; automatic termination refused for file safety."+Environment.NewLine);
       }
      }
