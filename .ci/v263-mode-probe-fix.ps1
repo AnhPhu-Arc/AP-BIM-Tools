@@ -13,7 +13,7 @@ Write-Source 'Cad\Processor.cs' $p
 
 $m=Read-Source 'Cad\ModelMerge.cs'
 $m=One $m 'public void Probe(){' 'public void Probe(){ProbeFor("ALL");} static void ProbeFor(string mode){'
-$m=One $m 'var target=Path.Combine(folder,"M.dwg");' 'if(mode=="C"||mode=="ALL"){var target=Path.Combine(folder,"M.dwg");'
+$m=One $m 'string target=Path.Combine(folder,"M.dwg");' 'if(mode=="C"||mode=="ALL"){string target=Path.Combine(folder,"M.dwg");'
 $m=One $m 'LinkPack.Check(target);' 'LinkPack.Check(target);}'
 $m=One $m 'var layoutTests=new List<SheetItem>();' @'
     if(mode=="A"){File.AppendAllText(log,"PASS: Mode A DWG read, write and pack."+Environment.NewLine);File.WriteAllText(result,"PASS");return;}
