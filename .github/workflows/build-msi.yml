@@ -1,4 +1,4 @@
-name: Build AP-BIM Tools 2.6.6 active layout qualification — NOT FINAL
+name: Build AP-BIM Tools 2.6.7 persisted viewport qualification — NOT FINAL
 on:
   workflow_dispatch:
   pull_request:
@@ -85,14 +85,14 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & '.\.ci\v266-build-qualification.ps1'
+          & '.\.ci\v267-build-qualification.ps1'
 
       - name: Upload qualification artifact (NOT production release)
         uses: actions/upload-artifact@v4
         with:
-          name: AP-BIM-Tools-2.6.6-QUALIFICATION-NOT-FINAL-CAD2021
+          name: AP-BIM-Tools-2.6.7-QUALIFICATION-NOT-FINAL-CAD2021
           path: |
-            output/AP-BIM-Tools-2.6.6.msi
+            output/AP-BIM-Tools-2.6.7.msi
             output/SHA256.txt
           if-no-files-found: error
           retention-days: 90
