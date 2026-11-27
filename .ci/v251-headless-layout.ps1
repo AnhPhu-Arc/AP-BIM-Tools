@@ -35,7 +35,7 @@ $head=@'
 $p=$p.Substring(0,$start)+$head+[Environment]::NewLine+$p.Substring($end)
 $p=One $p 'try{Acad.DocumentManager.MdiActiveDocument?.Editor.WriteMessage("\n"+t);}catch(System.Exception){}' 'try{if(ed!=null)ed.WriteMessage("\n"+t);else System.Console.WriteLine(t);}catch(System.Exception){}'
 # Bootstrap only is NETLOAD'ed. Engine assembly does not expose command attributes in Core.
-$p=One $p '[assembly: CommandClass(typeof(CadSheetExport.Processor))]' "#if !CSE_CORE"+[Environment]::NewLine+'[assembly: CommandClass(typeof(CadSheetExport.Processor))]'+[Environment]::NewLine+"#endif"
+$p=One $p '[assembly: CommandClass(typeof(CadSheetExport.Processor))]' ("#if !CSE_CORE"+[Environment]::NewLine+'[assembly: CommandClass(typeof(CadSheetExport.Processor))]'+[Environment]::NewLine+"#endif")
 Write-Source 'Cad\Processor.cs' $p
 $m=Read-Source 'Cad\ModelMerge.cs'
 $m=One $m '  [Autodesk.AutoCAD.Runtime.CommandMethod("CSEPROBE",Autodesk.AutoCAD.Runtime.CommandFlags.Session)]' @'
