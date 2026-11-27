@@ -199,7 +199,7 @@ $helpers=@'
       validator.SetPlotPaperUnits(ps,units);validator.SetPlotRotation(ps,bestRotation);
       validator.SetPlotType(ps,Autodesk.AutoCAD.DatabaseServices.PlotType.Window);
       validator.SetPlotWindowArea(ps,new Extents2d(f.MinPoint.X,f.MinPoint.Y,f.MaxPoint.X,f.MaxPoint.Y));
-      validator.SetUseStandardScale(ps,true);validator.SetStdScaleType(ps,StdScaleType.Scale1To1);
+      validator.SetUseStandardScale(ps,false);validator.SetCustomPrintScale(ps,new CustomScale(1.0,1.0));
       validator.SetPlotCentered(ps,true);validator.SetZoomToPaperOnUpdate(ps,true);
       layout.UpgradeOpen();layout.CopyFrom(ps);layout.PlotSettingsName="";
       var win=layout.PlotWindowArea;double eps=Math.Max(1e-6,Math.Max(w,h)*1e-8);
