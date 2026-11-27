@@ -1,0 +1,2 @@
+# 2.6.4 qualification
+User confirmed Model placement now disjoint and merged logo visible; paper viewport placement/size incorrect; individual DWG logo missing. Restore viewport Paper Space geometry and shifted camera after layout creation. Assert persisted geometry on reopen; refresh relative image paths with active packed paths; test moved-folder Mode A logo. CI verifies compilation/packaging only. Real CAD runtime and visual comparison remain release gates. No user drawings or logs committed.
