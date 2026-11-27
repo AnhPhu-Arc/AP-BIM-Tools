@@ -38,11 +38,11 @@ $p=One $p 'var cloned=(Viewport)dt.GetObject(clonedId,OpenMode.ForWrite);var fro
    cloned.ViewCenter=oldVp.ViewCenter;
    cloned.ViewHeight=oldVp.ViewHeight;
    cloned.TwistAngle=oldVp.TwistAngle;
-   cloned.On=true;
+   InDb(target,()=>cloned.On=true);
    say("VIEWPORT MAP "+name+" | "+oldVp.Handle+" -> "+cloned.Handle+" | target="+cloned.ViewTarget+" | center="+cloned.ViewCenter+" | scale="+cloned.CustomScale);
    var frozen=new ObjectIdCollection();
 '@
-$p=One $p 'var result=new LayerAndLayout{Layer=lid,Layout=layout.ObjectId,Viewports=viewIds,Entities=paperIds.Count};' 'RepairRasterMap(src,target,st,dt,map,say);var result=new LayerAndLayout{Layer=lid,Layout=layout.ObjectId,Viewports=viewIds,Entities=paperIds.Count};'
+$p=One $p 'var result=new LayerAndLayout{Layer=lid,Layout=layout.ObjectId,Viewports=viewIds,Entities=paperIds.Count};' 'InDb(target,()=>RepairRasterMap(src,target,st,dt,map,say));var result=new LayerAndLayout{Layer=lid,Layout=layout.ObjectId,Viewports=viewIds,Entities=paperIds.Count};'
 $p=One $p 'FlattenPaperOnly(s.FinalDwg,s.Layout,flat,v,Say);' 'FlattenProjected(s.FinalDwg,s.Layout,flat,v,Say);'
 Write-Source 'Cad\Processor.cs' $p
 
@@ -89,7 +89,16 @@ $helpers=@'
    }
    // Do not silently output a blank drawing if the overall ID is unavailable
    // or the persisted view state cannot be interpreted.
-   if(selected.Count==0)throw new System.Exception("No qualified visible Model viewport: "+layout.LayoutName+" | see VP SOURCE log");
+   if(selected.Count==0){
+    // Some side databases do not enumerate the paper-space viewport reliably.
+    // Recover only an unambiguous, enabled, non-1:1 view intersecting the model.
+    var candidates=all.Where(id=>{
+     var vp=(Viewport)tr.GetObject(id,OpenMode.ForRead);
+     return vp.On&&vp.Number!=1&&IsTop2D(vp)&&vp.Height>0&&vp.ViewHeight>0&&Math.Abs(vp.ViewHeight/vp.Height-1)>1e-6&&IntersectsView(vp,modelBounds.Value);
+    }).ToList();
+    if(candidates.Count==1){selected.Add(candidates[0]);say("VP RECOVERY: "+layout.LayoutName+" | "+candidates[0].Handle);}
+    else throw new System.Exception("No qualified visible Model viewport: "+layout.LayoutName+" | see VP SOURCE log");
+   }
    return selected;
   }
   static void RepairRasterMap(Database src,Database dest,Transaction st,Transaction dt,IdMapping map,Action<string> say){
@@ -193,7 +202,7 @@ $m=One $m $anchor ($helpers+[Environment]::NewLine+$anchor)
 $a=$m.IndexOf('    bool refusedFloating=false;')
 $b=$m.IndexOf('    string mixed=',$a)
 if($a -lt 0 -or $b -lt 0){throw 'Probe projection boundary missing'}
-$m=$m.Substring(0,$a)+@'
+$projectedProbe=@'
     string projected=Path.Combine(folder,"Fprojected.dwg");
     FlattenProjected(layoutTests[1].FinalDwg,layoutTests[1].Layout,projected,DwgVersion.AC1032,report);
     ValidateFlattened(projected,layoutTests[1].Number);
@@ -202,13 +211,21 @@ $m=$m.Substring(0,$a)+@'
      var pms=(BlockTableRecord)pt.GetObject(pbt[BlockTableRecord.ModelSpace],OpenMode.ForRead);
      if(!pms.Cast<ObjectId>().Any(id=>pt.GetObject(id,OpenMode.ForRead) is BlockReference))throw new System.Exception("Projected viewport block missing");
     }
-'@+$m.Substring($b)
+'@
+$m=$m.Substring(0,$a)+$projectedProbe+[Environment]::NewLine+$m.Substring($b)
 # Preserve the existing mixed Layout probe; remove temporary placeholder.
-$m=One $m 'paper.AppendEntity(floating);tr.AddNewlyCreatedDBObject(floating,true);' 'paper.AppendEntity(floating);tr.AddNewlyCreatedDBObject(floating,true);floating.On=true;'
+$m=One $m 'paper.AppendEntity(floating);tr.AddNewlyCreatedDBObject(floating,true);' 'paper.AppendEntity(floating);tr.AddNewlyCreatedDBObject(floating,true);InDb(db,()=>floating.On=true);'
 # Paper-only test must no longer depend on Viewport.Number.
 $m=One $m 'FlattenPaperOnly(layoutTests[0].FinalDwg,layoutTests[0].Layout,paperFlat,DwgVersion.AC1032,report);' 'FlattenProjected(layoutTests[0].FinalDwg,layoutTests[0].Layout,paperFlat,DwgVersion.AC1032,report);'
 # Repair references on the final clone as well, not only the intermediate projection.
-$m=One $m 'src.WblockCloneObjects(ids,bid,new IdMapping(),DuplicateRecordCloning.MangleName,false);' 'var cloneMap=new IdMapping();src.WblockCloneObjects(ids,bid,cloneMap,DuplicateRecordCloning.MangleName,false);RepairRasterMap(src,target,st,dt,cloneMap,say);'
+$m=One $m 'src.WblockCloneObjects(ids,bid,new IdMapping(),DuplicateRecordCloning.MangleName,false);' 'var cloneMap=new IdMapping();src.WblockCloneObjects(ids,bid,cloneMap,DuplicateRecordCloning.MangleName,false);InDb(target,()=>RepairRasterMap(src,target,st,dt,cloneMap,say));'
+$m=One $m 'for(int i=0;i<2;i++){
+     string name="TEST-LAYOUT-"+i' 'for(int i=0;i<3;i++){
+     string name="TEST-LAYOUT-"+i'
+$m=One $m 'if(i==1){
+        var bt=(BlockTable)' 'if(i>0){
+        var bt=(BlockTable)'
+$m=One $m 'if(names.Count!=2||layoutTests.Any' 'if(names.Count!=layoutTests.Count||layoutTests.Any'
 Write-Source 'Cad\ModelMerge.cs' $m
 $c=Read-Source 'Revit\Command.cs'
 $c=One $c 'Mode C thử nghiệm chạy nền: chỉ hỗ trợ Sheet không có viewport nổi. Sheet có viewport sẽ dừng an toàn, không mở AutoCAD Desktop. Tiếp tục?' 'Mode C chạy nền thử nghiệm: hỗ trợ viewport 2D trực giao hình chữ nhật, không mở AutoCAD Desktop. Kiểm tra bản vẽ đầu ra trước khi phát hành. Tiếp tục?'
