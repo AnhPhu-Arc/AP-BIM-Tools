@@ -11,7 +11,7 @@ $p=One $p 'CloneSheet(src,target,s.Layout,parts.Count+1,say)' 'CloneSheet(src,ta
 $p=One $p 'static LayerAndLayout CloneSheet(Database src,Database target,string name,int index,Action<string> say)' 'static LayerAndLayout CloneSheet(Database src,Database target,string name,int index,ref double nextModelX,Action<string> say)'
 $p=One $p 'var br=new BlockReference(Point3d.Origin,modelBlock){LayerId=lid};destModel.AppendEntity(br);dt.AddNewlyCreatedDBObject(br,true);' @'
    Extents3d? modelBounds=EntityBounds(sm,st);
-   Vector3d shift=Vector3d.Zero;
+   Vector3d shift=new Vector3d(0.0,0.0,0.0);
    if(modelBounds.HasValue){
     var e=modelBounds.Value;
     shift=new Vector3d(nextModelX-e.MinPoint.X,-e.MinPoint.Y,0);
