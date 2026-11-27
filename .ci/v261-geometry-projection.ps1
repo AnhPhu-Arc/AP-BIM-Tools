@@ -43,6 +43,8 @@ $p=One $p 'var cloned=(Viewport)dt.GetObject(clonedId,OpenMode.ForWrite);var fro
    var frozen=new ObjectIdCollection();
 '@
 $p=One $p 'var result=new LayerAndLayout{Layer=lid,Layout=layout.ObjectId,Viewports=viewIds,Entities=paperIds.Count};' 'InDb(target,()=>RepairRasterMap(src,target,st,dt,map,say));var result=new LayerAndLayout{Layer=lid,Layout=layout.ObjectId,Viewports=viewIds,Entities=paperIds.Count};'
+# Check that independent source models occupy disjoint X ranges after reopen.
+$p=One $p 'var found=Layouts(verify,true);' 'VerifyModelIsolation(verify);var found=Layouts(verify,true);'
 $p=One $p 'FlattenPaperOnly(s.FinalDwg,s.Layout,flat,v,Say);' 'FlattenProjected(s.FinalDwg,s.Layout,flat,v,Say);'
 Write-Source 'Cad\Processor.cs' $p
 
@@ -57,6 +59,20 @@ $helpers=@'
     catch(Autodesk.AutoCAD.Runtime.Exception ex){throw new System.Exception("Cannot establish entity extents: "+e.Handle,ex);}
    }
    return result;
+  }
+  static void VerifyModelIsolation(Database db){
+   using(var tr=db.TransactionManager.StartTransaction()){
+    var bt=(BlockTable)tr.GetObject(db.BlockTableId,OpenMode.ForRead);
+    var ms=(BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace],OpenMode.ForRead);
+    var ranges=new List<Tuple<double,double>>();
+    foreach(ObjectId id in ms){
+     var br=tr.GetObject(id,OpenMode.ForRead) as BlockReference;
+     if(br==null)throw new System.Exception("Unexpected ungrouped Model entity after Layout merge");
+     var e=br.GeometricExtents;ranges.Add(Tuple.Create(e.MinPoint.X,e.MaxPoint.X));
+    }
+    var sorted=ranges.OrderBy(x=>x.Item1).ToList();
+    for(int i=1;i<sorted.Count;i++)if(sorted[i].Item1<sorted[i-1].Item2-1e-6)throw new System.Exception("Model blocks overlap after merge");
+   }
   }
   static bool IsTop2D(Viewport vp){
    return vp.ViewDirection.GetNormal().IsEqualTo(Vector3d.ZAxis)&&Math.Abs(vp.TwistAngle)<1e-8&&!vp.PerspectiveOn;
@@ -236,7 +252,7 @@ $m=One $m 'if(i==1){
 $m=One $m 'var layoutTests=new List<SheetItem>();' @'
 var layoutTests=new List<SheetItem>();
     string imagePath=Path.Combine(Directory.CreateDirectory(Path.Combine(folder,"Links")).FullName,"probe.png");
-    File.WriteAllBytes(imagePath,Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg=="));
+    File.WriteAllBytes(imagePath,Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEklEQVR4nGP8z4AdMOEQH6QSAM1BAQ/oQeJvAAAAAElFTkSuQmCC"));
 '@
 $m=One $m 'paper.AppendEntity(border);tr.AddNewlyCreatedDBObject(border,true);' @'
 paper.AppendEntity(border);tr.AddNewlyCreatedDBObject(border,true);
