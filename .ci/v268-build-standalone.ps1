@@ -40,7 +40,7 @@ $top=Node $doc 'Wix' @{}
 $pkg=Node $top 'Package' @{Name='AP CAD Export';Manufacturer='AP BIM Tools';Version=$version;UpgradeCode='39A83E67-0A17-48A0-B328-68386F8CE19B';Scope='perMachine'}
 $null=Node $pkg 'MajorUpgrade' @{AllowSameVersionUpgrades='yes';Schedule='afterInstallInitialize';DowngradeErrorMessage='A newer AP BIM Tools edition is installed. Uninstall it before switching editions.'}
 $null=Node $pkg 'MediaTemplate' @{EmbedCab='yes'}
-function Dir($parent,[string]$name,[string]$key){return ,(Node $parent 'Directory' @{Id=(Id 'D' $key);Name=$name})}
+function New-PayloadDir($parent,[string]$name,[string]$key){return ,(Node $parent 'Directory' @{Id=(Id 'D' $key);Name=$name})}
 function PutFile($parent,[string]$source,[string]$key){
   $file=Get-Item -LiteralPath $source
   if($file.Name -match '^(AP\.BimTools|RevitAPI(UI)?|acmgd|acdbmgd|accoremgd|AcSmComponents)\.dll$'){throw "Disallowed standalone payload: $($file.Name)"}
@@ -53,28 +53,28 @@ function PutFile($parent,[string]$source,[string]$key){
 function PutTree($parent,[string]$source,[string]$key){
   Need $source
   foreach($f in Get-ChildItem -LiteralPath $source -File){PutFile $parent $f.FullName ($key+'/'+$f.Name)}
-  foreach($d in Get-ChildItem -LiteralPath $source -Directory){$k=$key+'/'+$d.Name;$child=Dir $parent $d.Name $k;PutTree $child $d.FullName $k}
+  foreach($d in Get-ChildItem -LiteralPath $source -Directory){$k=$key+'/'+$d.Name;$child=New-PayloadDir $parent $d.Name $k;PutTree $child $d.FullName $k}
 }
 $common=Node $pkg 'StandardDirectory' @{Id='CommonAppDataFolder'}
-$autodesk=Dir $common 'Autodesk' 'ProgramData/Autodesk'
-$revit=Dir $autodesk 'Revit' 'ProgramData/Autodesk/Revit'
-$addins=Dir $revit 'Addins' 'ProgramData/Autodesk/Revit/Addins'
-$r24=Dir $addins '2024' 'ProgramData/Autodesk/Revit/Addins/2024'
+$autodesk=New-PayloadDir $common 'Autodesk' 'ProgramData/Autodesk'
+$revit=New-PayloadDir $autodesk 'Revit' 'ProgramData/Autodesk/Revit'
+$addins=New-PayloadDir $revit 'Addins' 'ProgramData/Autodesk/Revit/Addins'
+$r24=New-PayloadDir $addins '2024' 'ProgramData/Autodesk/Revit/Addins/2024'
 PutFile $r24 $manifest 'ProgramData/Autodesk/Revit/Addins/2024/zzz.AP.BimTools.CadExport.addin'
 $rKey='ProgramData/Autodesk/Revit/Addins/2024/AP.CadExport'
-$rd=Dir $r24 'AP.CadExport' $rKey
+$rd=New-PayloadDir $r24 'AP.CadExport' $rKey
 PutTree $rd (Join-Path $rev 'AP.CadExport') $rKey
-$plugins=Dir $autodesk 'ApplicationPlugins' 'ProgramData/Autodesk/ApplicationPlugins'
+$plugins=New-PayloadDir $autodesk 'ApplicationPlugins' 'ProgramData/Autodesk/ApplicationPlugins'
 $cKey='ProgramData/Autodesk/ApplicationPlugins/CADSheetExport.2021.bundle'
-$cd=Dir $plugins 'CADSheetExport.2021.bundle' $cKey
+$cd=New-PayloadDir $plugins 'CADSheetExport.2021.bundle' $cKey
 PutTree $cd $cad $cKey
 $pf=Node $pkg 'StandardDirectory' @{Id='ProgramFiles64Folder'}
-$ap=Dir $pf 'AP-BIM Tools' 'ProgramFiles/AP-BIM Tools'
-$engine=Dir $ap 'CAD Engine' 'ProgramFiles/AP-BIM Tools/CAD Engine'
-$year=Dir $engine '2021' 'ProgramFiles/AP-BIM Tools/CAD Engine/2021'
-$ha=Dir $year 'HeadlessApp' 'ProgramFiles/AP-BIM Tools/CAD Engine/2021/HeadlessApp'
+$ap=New-PayloadDir $pf 'AP-BIM Tools' 'ProgramFiles/AP-BIM Tools'
+$engine=New-PayloadDir $ap 'CAD Engine' 'ProgramFiles/AP-BIM Tools/CAD Engine'
+$year=New-PayloadDir $engine '2021' 'ProgramFiles/AP-BIM Tools/CAD Engine/2021'
+$ha=New-PayloadDir $year 'HeadlessApp' 'ProgramFiles/AP-BIM Tools/CAD Engine/2021/HeadlessApp'
 $hKey='ProgramFiles/AP-BIM Tools/CAD Engine/2021/HeadlessApp/AP.CSE.Headless.bundle'
-$hd=Dir $ha 'AP.CSE.Headless.bundle' $hKey
+$hd=New-PayloadDir $ha 'AP.CSE.Headless.bundle' $hKey
 PutTree $hd $head $hKey
 $feature=Node $pkg 'Feature' @{Id='CadExportOnly';Title='CAD Export';Level='1'}
 foreach($id in $script:components){$null=Node $feature 'ComponentRef' @{Id=$id}}
