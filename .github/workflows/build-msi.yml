@@ -8,7 +8,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-2025
-    timeout-minutes: 55
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -112,4 +112,23 @@ jobs:
             output/Standalone-SHA256.txt
             output/Standalone-Payload.csv
           if-no-files-found: error
+          retention-days: 90
+
+      - name: Qualify additional CAD Export host versions (compile only)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & '.\.ci\cad-export-multihost-qualification.ps1'
+
+      - name: Upload compatibility report (not a release)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: AP-CAD-Export-Multihost-Compile-Report
+          path: |
+            output/compatibility/compile-matrix.csv
+            output/compatibility/*.log
+          if-no-files-found: warn
           retention-days: 90
